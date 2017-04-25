@@ -1,6 +1,7 @@
 # encoding:utf-8
 
 require 'rest-client'
+require 'reverse_markdown'
 require 'nokogiri'
 require 'json'
 require 'pp'
@@ -16,6 +17,16 @@ def sdut_get(pid)
 
     doc = Nokogiri::HTML(response.body)
 
+    host = "http://www.sdutacm.org"
+    doc.search('//a').each do |row|
+        row.attributes['href'].value = host + row.attributes['href'].value if row.attributes['href'] != nil
+    end
+
+    doc.search('//img').each do |row|
+        row.remove if row.attributes['alt'].value == "tex2html_wrap_inline75"
+        row.attributes['src'].value = host + row.attributes['src'].value if row != nil
+    end
+
     # find all types of the website
     result = Hash.new
     doc.search('//h4').each do |row|
@@ -23,13 +34,19 @@ def sdut_get(pid)
     end
 
     problem_content = Array.new
-    doc.search('//div[@class="prob-content"]/.').map do |row|
-        problem_content << row.children[1].text if row.children[1] != nil
+    doc.search('//div[@class="prob-content"]').each do |row|
+        problem_content << ReverseMarkdown.convert(row.children.to_s.gsub("\u00A0", "")).strip
     end
 
     result.each do |index, value|
         result[index] = problem_content.delete(problem_content.first)
     end
+
+    doc.search('//div[@class="prob-info"]/span').each do |row|
+        problem_content << row.text.split(":")[-1].gsub("MS", "").gsub("KB", "").gsub("\u00A0", "")
+    end
+    result[:Timlimit] = problem_content[0]
+    result[:Memorylimit] = problem_content[1]
 
     result = result.to_json
     io = File.open("./problems/#{pid}.json", "w")
@@ -86,4 +103,5 @@ def thread(max_num)
     thread.each { |n| n.join }
 end
 
+#sdut_get(1059)
 thread(sdut_pid_max(sdut_pagenum_max).to_i)
