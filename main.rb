@@ -13,18 +13,23 @@ def sdut_get(pid)
         response = RestClient.get baseurl
     rescue Exception => e
         p "connent error #{pid}"
+        retry
     end
 
+    return nil if response == nil
     doc = Nokogiri::HTML(response.body)
 
     host = "http://www.sdutacm.org"
     doc.search('//a').each do |row|
-        row.attributes['href'].value = host + row.attributes['href'].value if row.attributes['href'] != nil
+        if row.attributes['href'] != nil
+            row.attributes['href'].value = host + row.attributes['href'].value if row.attributes['href'].value.index("http") == nil
+        end
     end
 
     doc.search('//img').each do |row|
+        next if row.attributes['alt'] == nil
         row.remove if row.attributes['alt'].value == "tex2html_wrap_inline75"
-        row.attributes['src'].value = host + row.attributes['src'].value if row != nil
+        row.attributes['src'].value = host + row.attributes['src'].value if row != nil && row.attributes['src'].value.index("http") == nil
     end
 
     # find all types of the website
@@ -33,20 +38,33 @@ def sdut_get(pid)
         result["#{row.children.text}"] = nil
     end
 
+    return nil if result.empty?
+
     problem_content = Array.new
     doc.search('//div[@class="prob-content"]').each do |row|
-        problem_content << ReverseMarkdown.convert(row.children.to_s.gsub("\u00A0", "")).strip
+        temp = row.children.to_s
+        problem_content << temp.gsub("\u00A0", " ")
     end
 
     result.each do |index, value|
-        result[index] = problem_content.delete(problem_content.first)
+        result[index] = problem_content.delete_at(0)
     end
+
+    result.each do |index, value|
+        result[index] = ReverseMarkdown.convert(value, unknown_tags: :bypass).strip if index != "Example Input" && index != "Example Output"
+    end
+
+    #result['Example Input'].gsub("<pre>", "").gsub("</pre>", "").rstrip if result['Example Input'] != nil
+    #result['Example Output'].gsub("<pre>", "").gsub("</pre>", "").rstrip if result['Example Output'] != nil
+    result['Example Input'] = Nokogiri::HTML.parse(result['Example Input']).text.rstrip
+    result['Example Output'] = Nokogiri::HTML.parse(result['Example Output']).text
 
     doc.search('//div[@class="prob-info"]/span').each do |row|
         problem_content << row.text.split(":")[-1].gsub("MS", "").gsub("KB", "").gsub("\u00A0", "")
     end
     result[:Timlimit] = problem_content[0]
     result[:Memorylimit] = problem_content[1]
+    result[:title] = doc.search('//h3').text.strip
 
     result = result.to_json
     io = File.open("./problems/#{pid}.json", "w")
@@ -103,5 +121,5 @@ def thread(max_num)
     thread.each { |n| n.join }
 end
 
-#sdut_get(1059)
+#sdut_get(1018)
 thread(sdut_pid_max(sdut_pagenum_max).to_i)
